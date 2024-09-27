@@ -1,0 +1,11 @@
+[package]
+name = "minimnist-rs"
+version = "0.0.1"
+authors = ["Richard Zak <richard.j.zak@gmail.com>"]
+description = "miniMNIST"
+repository = "https://github.com/rjzak/miniMNIST-rs"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+rand = "0.8"
