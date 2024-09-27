@@ -1,9 +1,10 @@
 use std::cmp::max;
+use std::path::Path;
 use rand::{random, Rng};
 
-const INPUT_SIZE:u16 = 784;
-const HIDDEN_SIZE: u16 = 256;
-const OUTPUT_SIZE: u16 = 10;
+const INPUT_SIZE: u32 = 784;
+const HIDDEN_SIZE: u32 = 256;
+const OUTPUT_SIZE: u32 = 10;
 const LEARNING_RATE: f32 = 0.001;
 const EPOCHS: u16 = 20;
 const BATCH_SIZE: u16 = 64;
@@ -16,8 +17,8 @@ const TRAIN_LBL_PATH: &str = "data/train-labels.idx1-ubyte";
 struct Layer {
     weights: Vec<f32>,
     biases: Vec<f32>,
-    input_size: u16,
-    output_size: u16,
+    input_size: u32,
+    output_size: u32,
 }
 
 struct Network {
@@ -28,11 +29,11 @@ struct Network {
 struct InputData {
     images: Vec<u8>,
     labels: Vec<u8>,
-    nImages: usize,
+    num_images: u32,
 }
 
 impl Layer {
-    pub fn new(in_size: u16, out_size: u16) -> Self {
+    pub fn new(in_size: u32, out_size: u32) -> Self {
         let n = in_size * out_size;
         let scale = (2.0f32 / in_size as f32).sqrt();
 
@@ -78,7 +79,7 @@ impl Layer {
 }
 
 impl Network {
-    pub fn new(input: u16, hidden: u16, output: u16) -> Self {
+    pub fn new(input: u32, hidden: u32, output: u32) -> Self {
         Network {
             hidden: Layer::new(input, hidden),
             output: Layer::new(hidden, output),
@@ -147,6 +148,36 @@ impl Network {
     }
 }
 
+#[inline]
+fn bytes_to_u32(data: &[u8]) -> u32 {
+    let array: [u8; 4] = data.try_into().unwrap();
+    u32::from_be_bytes(array)
+}
+
+impl InputData {
+    pub fn load(data: &Path, labels: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let data_contents = std::fs::read(data)?;
+        let labels_contents = std::fs::read(labels)?;
+        
+        let num_images = bytes_to_u32(&data_contents[4..8]);
+        let num_rows = bytes_to_u32(&data_contents[8..12]);
+        let num_cols = bytes_to_u32(&data_contents[12..16]);
+        
+        let num_labels = bytes_to_u32(&labels_contents[4..8]);
+        
+        #[cfg(debug_assertions)]
+        println!("Num images: {num_images}, Num rows: {num_rows}, Num cols: {num_cols}, Num labels: {num_labels}");
+        
+        debug_assert_eq!(num_images, num_labels);
+        
+        Ok(Self {
+            images: data_contents[16..].to_vec(),
+            labels: labels_contents[8..].to_vec(),
+            num_images,
+        })
+    }
+}
+
 fn softmax(input: &mut[f32]) {
     let mut max = input[0];
     let mut sum = 0f32;
@@ -166,4 +197,5 @@ fn softmax(input: &mut[f32]) {
 
 fn main() {
     let mut net = Network::new(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE);
+    let data = InputData::load(TRAIN_IMG_PATH.as_ref(), TRAIN_LBL_PATH.as_ref()).expect("Failed to load mnist data");
 }
