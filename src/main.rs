@@ -55,7 +55,7 @@ impl Layer {
         for (i, output_value) in output.iter_mut().enumerate() {
             *output_value = self.biases[i];
 
-            for j in 0..self.weights.len() {
+            for j in 0..self.input_size as usize {
                 *output_value += input[j] * self.weights[j * self.output_size as usize + i];
             }
         }
@@ -101,7 +101,7 @@ impl Network {
 
         self.output.forward(&hidden_output, &mut final_output);
         softmax(&mut final_output);
-        
+
         for (index, output_grad_value) in output_grad.iter_mut().enumerate() {
             let same: f32 = if index == label as usize {
                 0.0
@@ -121,7 +121,7 @@ impl Network {
 
         self.hidden.backward(&input, &hidden_grad, &mut vec![], lr);
     }
-    
+
     pub fn predict(&self, input: &[f32]) -> u16 {
         let mut hidden_output = vec![0.0f32; HIDDEN_SIZE as usize];
         let mut final_output = vec![0.0f32; OUTPUT_SIZE as usize];
@@ -133,7 +133,7 @@ impl Network {
                 *weight = 0f32;
             }
         }
-        
+
         self.output.forward(&hidden_output, &mut final_output);
         softmax(&mut final_output);
 
@@ -143,7 +143,7 @@ impl Network {
                 max_index = index;
             }
         }
-        
+
         max_index as u16
     }
 }
@@ -158,23 +158,33 @@ impl InputData {
     pub fn load(data: &Path, labels: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let data_contents = std::fs::read(data)?;
         let labels_contents = std::fs::read(labels)?;
-        
+
         let num_images = bytes_to_u32(&data_contents[4..8]);
         let num_rows = bytes_to_u32(&data_contents[8..12]);
         let num_cols = bytes_to_u32(&data_contents[12..16]);
-        
+
         let num_labels = bytes_to_u32(&labels_contents[4..8]);
-        
+
         #[cfg(debug_assertions)]
         println!("Num images: {num_images}, Num rows: {num_rows}, Num cols: {num_cols}, Num labels: {num_labels}");
-        
+
         debug_assert_eq!(num_images, num_labels);
-        
+
         Ok(Self {
             images: data_contents[16..].to_vec(),
             labels: labels_contents[8..].to_vec(),
             num_images,
         })
+    }
+
+    pub fn shuffle(&mut self) {
+        for i in self.num_images as usize - 1..0 {
+            let j = random::<usize>() % (i + 1);
+            for k in 0..INPUT_SIZE as usize {
+                self.images.swap(i * INPUT_SIZE as usize + k, j * INPUT_SIZE as usize + k);
+            }
+            self.labels.swap(i, j);
+        }
     }
 }
 
@@ -197,5 +207,58 @@ fn softmax(input: &mut[f32]) {
 
 fn main() {
     let mut net = Network::new(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE);
-    let data = InputData::load(TRAIN_IMG_PATH.as_ref(), TRAIN_LBL_PATH.as_ref()).expect("Failed to load mnist data");
+
+    let mut data = InputData::load(TRAIN_IMG_PATH.as_ref(), TRAIN_LBL_PATH.as_ref()).expect("Failed to load mnist data");
+    data.shuffle();
+
+    let train_size = (data.num_images as f32 * TRAIN_SPLIT) as usize;
+    let test_size = data.num_images as usize - train_size;
+    let mut img = vec![0.0f32; INPUT_SIZE as usize];
+
+    for epoch in 0..EPOCHS {
+        let mut total_loss = 0.0f32;
+
+        for i in (0..train_size).step_by(BATCH_SIZE as usize) {
+            let mut j = 0;
+
+            let idx = i + j;
+            for (k, img_val) in img.iter_mut().enumerate() { // Data normalization
+                *img_val = data.images[idx * INPUT_SIZE as usize + k] as f32 / 255.0f32;
+            }
+
+            net.train(&img, data.labels[idx] as u16, LEARNING_RATE);
+
+            let mut hidden_output = vec![0.0f32; HIDDEN_SIZE as usize];
+            let mut final_output = vec![0.0f32; OUTPUT_SIZE as usize];
+            net.hidden.forward(&img, &mut hidden_output);
+            for hidden_output_val in hidden_output.iter_mut() {
+                if *hidden_output_val <= 0.0 { // ReLU
+                    *hidden_output_val = 0.0;
+                }
+            }
+            net.output.forward(&hidden_output, &mut final_output);
+            softmax(&mut final_output);
+
+            total_loss += -(final_output[data.labels[idx] as usize] + 1e-10f32).ln();
+
+            loop {
+                if j >= BATCH_SIZE as usize && i + j >= train_size {
+                    break;
+                }
+                j += 1;
+            }
+        }
+
+        let mut correct = 0;
+        for i in train_size..data.num_images as usize {
+            for (k, img_val) in img.iter_mut().enumerate() { // Data normalization
+                *img_val = data.images[i * INPUT_SIZE as usize + k] as f32 / 255.0f32;
+            }
+            
+            if net.predict(&img) == data.labels[i] as u16 {
+                correct += 1;
+            }
+        }
+        println!("Epoch {}, Accuracy: {}, Avg Loss: {}", epoch + 1, correct as f32 / test_size as f32 * 100f32, total_loss / train_size as f32);
+    }
 }
