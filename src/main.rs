@@ -104,9 +104,9 @@ impl Network {
 
         for (index, output_grad_value) in output_grad.iter_mut().enumerate() {
             let same: f32 = if index == label as usize {
-                0.0
-            } else {
                 1.0
+            } else {
+                0.0
             };
             *output_grad_value = final_output[index] - same;
         }
@@ -119,10 +119,10 @@ impl Network {
             }
         }
 
-        self.hidden.backward(&input, &hidden_grad, &mut vec![], lr);
+        self.hidden.backward(input, &hidden_grad, &mut [], lr);
     }
 
-    pub fn predict(&self, input: &[f32]) -> u16 {
+    pub fn predict(&self, input: &[f32]) -> u8 {
         let mut hidden_output = vec![0.0f32; HIDDEN_SIZE as usize];
         let mut final_output = vec![0.0f32; OUTPUT_SIZE as usize];
 
@@ -144,7 +144,7 @@ impl Network {
             }
         }
 
-        max_index as u16
+        max_index as u8
     }
 }
 
@@ -209,7 +209,7 @@ fn main() {
     let mut net = Network::new(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE);
 
     let mut data = InputData::load(TRAIN_IMG_PATH.as_ref(), TRAIN_LBL_PATH.as_ref()).expect("Failed to load mnist data");
-    data.shuffle();
+    //data.shuffle();
 
     let train_size = (data.num_images as f32 * TRAIN_SPLIT) as usize;
     let test_size = data.num_images as usize - train_size;
@@ -221,28 +221,28 @@ fn main() {
         for i in (0..train_size).step_by(BATCH_SIZE as usize) {
             let mut j = 0;
 
-            let idx = i + j;
-            for (k, img_val) in img.iter_mut().enumerate() { // Data normalization
-                *img_val = data.images[idx * INPUT_SIZE as usize + k] as f32 / 255.0f32;
-            }
-
-            net.train(&img, data.labels[idx] as u16, LEARNING_RATE);
-
-            let mut hidden_output = vec![0.0f32; HIDDEN_SIZE as usize];
-            let mut final_output = vec![0.0f32; OUTPUT_SIZE as usize];
-            net.hidden.forward(&img, &mut hidden_output);
-            for hidden_output_val in hidden_output.iter_mut() {
-                if *hidden_output_val <= 0.0 { // ReLU
-                    *hidden_output_val = 0.0;
-                }
-            }
-            net.output.forward(&hidden_output, &mut final_output);
-            softmax(&mut final_output);
-
-            total_loss += -(final_output[data.labels[idx] as usize] + 1e-10f32).ln();
-
             loop {
-                if j >= BATCH_SIZE as usize && i + j >= train_size {
+                let idx = i + j;
+                for (k, img_val) in img.iter_mut().enumerate() { // Data normalization
+                    *img_val = data.images[idx * INPUT_SIZE as usize + k] as f32 / 255.0f32;
+                }
+
+                net.train(&img, data.labels[idx] as u16, LEARNING_RATE);
+
+                let mut hidden_output = vec![0.0f32; HIDDEN_SIZE as usize];
+                let mut final_output = vec![0.0f32; OUTPUT_SIZE as usize];
+                net.hidden.forward(&img, &mut hidden_output);
+                for hidden_output_val in hidden_output.iter_mut() {
+                    if *hidden_output_val <= 0.0 { // ReLU
+                        *hidden_output_val = 0.0;
+                    }
+                }
+                net.output.forward(&hidden_output, &mut final_output);
+                softmax(&mut final_output);
+
+                total_loss += -(final_output[data.labels[idx] as usize] + 1e-10f32).ln();
+                
+                if j >= BATCH_SIZE as usize || i + j >= train_size {
                     break;
                 }
                 j += 1;
@@ -255,7 +255,7 @@ fn main() {
                 *img_val = data.images[i * INPUT_SIZE as usize + k] as f32 / 255.0f32;
             }
             
-            if net.predict(&img) == data.labels[i] as u16 {
+            if net.predict(&img) == data.labels[i] {
                 correct += 1;
             }
         }
